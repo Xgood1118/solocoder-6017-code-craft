@@ -10,6 +10,9 @@ interface CommentProps {
     userName: string;
     snippetId: Id<"snippets">;
     content: string;
+    mentionWords?: string[];
+    mentionedUserNames?: string[];
+    mentionedUserIds?: string[];
   };
   onDelete: (commentId: Id<"snippetComments">) => void;
   isDeleting: boolean;
@@ -44,7 +47,11 @@ function Comment({ comment, currentUserId, isDeleting, onDelete }: CommentProps)
           )}
         </div>
 
-        <CommentContent content={comment.content} />
+        <CommentContent
+          content={comment.content}
+          mentionWords={comment.mentionWords}
+          mentionedUserIds={comment.mentionedUserIds}
+        />
       </div>
     </div>
   );

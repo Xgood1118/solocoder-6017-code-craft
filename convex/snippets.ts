@@ -6,6 +6,7 @@ export const createSnippet = mutation({
     title: v.string(),
     language: v.string(),
     code: v.string(),
+    forkedFromId: v.optional(v.id("snippets")),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -19,13 +20,19 @@ export const createSnippet = mutation({
 
     if (!user) throw new Error("User not found");
 
-    const snippetId = await ctx.db.insert("snippets", {
+    const snippetData: any = {
       userId: identity.subject,
       userName: user.name,
       title: args.title,
       language: args.language,
       code: args.code,
-    });
+    };
+
+    if (args.forkedFromId) {
+      snippetData.forkedFromId = args.forkedFromId;
+    }
+
+    const snippetId = await ctx.db.insert("snippets", snippetData);
 
     return snippetId;
   },
@@ -150,6 +157,20 @@ export const getSnippets = query({
   },
 });
 
+export const getSnippetsByUserId = query({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const snippets = await ctx.db
+      .query("snippets")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), args.userId))
+      .order("desc")
+      .collect();
+
+    return snippets;
+  },
+});
+
 export const getSnippetById = query({
   args: { snippetId: v.id("snippets") },
   handler: async (ctx, args) => {
@@ -222,5 +243,235 @@ export const getStarredSnippets = query({
     const snippets = await Promise.all(stars.map((star) => ctx.db.get(star.snippetId)));
 
     return snippets.filter((snippet) => snippet !== null);
+  },
+});
+
+// ====== Fork related APIs ======
+
+export const getForkedBySnippets = query({
+  args: { snippetId: v.id("snippets") },
+  handler: async (ctx, args) => {
+    const snippets = await ctx.db
+      .query("snippets")
+      .withIndex("by_forked_from_id")
+      .filter((q) => q.eq(q.field("forkedFromId"), args.snippetId))
+      .collect();
+
+    return snippets;
+  },
+});
+
+export const getMyForkedSnippets = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const snippets = await ctx.db
+      .query("snippets")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), identity.subject))
+      .collect();
+
+    const forkedSnippets = snippets.filter((s) => s.forkedFromId !== undefined);
+
+    const snippetsWithOriginals = await Promise.all(
+      forkedSnippets.map(async (s) => {
+        const original = s.forkedFromId ? await ctx.db.get(s.forkedFromId) : null;
+        return {
+          ...s,
+          originalSnippet: original,
+        };
+      })
+    );
+
+    return snippetsWithOriginals;
+  },
+});
+
+export const getSnippetsForkedFromMe = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const mySnippets = await ctx.db
+      .query("snippets")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), identity.subject))
+      .collect();
+
+    const mySnippetIds = new Set(mySnippets.map((s) => s._id));
+
+    const allForked = await ctx.db
+      .query("snippets")
+      .withIndex("by_forked_from_id")
+      .collect();
+
+    const forkedFromMe = allForked.filter(
+      (s) => s.forkedFromId && mySnippetIds.has(s.forkedFromId)
+    );
+
+    return forkedFromMe;
+  },
+});
+
+// ====== Mention & Notification related APIs ======
+
+export const addCommentWithMentions = mutation({
+  args: {
+    snippetId: v.id("snippets"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), identity.subject))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const snippet = await ctx.db.get(args.snippetId);
+    if (!snippet) throw new Error("Snippet not found");
+
+    const mentionRegex = /@(\w+)/g;
+    const mentionedUsernames = new Set<string>();
+    let match;
+    while ((match = mentionRegex.exec(args.content)) !== null) {
+      mentionedUsernames.add(match[1]);
+    }
+
+    const allUsers = await ctx.db.query("users").collect();
+    const userMap = new Map<string, typeof user>();
+    allUsers.forEach((u) => {
+      userMap.set(u.name.toLowerCase(), u);
+    });
+
+    const validMentionWords: string[] = [];
+    const validMentionedUserNames: string[] = [];
+    const mentionedUserIds: string[] = [];
+
+    for (const username of mentionedUsernames) {
+      const mentionedUser = userMap.get(username.toLowerCase());
+      if (mentionedUser && mentionedUser.userId !== identity.subject) {
+        validMentionWords.push(username.toLowerCase());
+        validMentionedUserNames.push(mentionedUser.name);
+        mentionedUserIds.push(mentionedUser.userId);
+      }
+    }
+
+    const commentId = await ctx.db.insert("snippetComments", {
+      snippetId: args.snippetId,
+      userId: identity.subject,
+      userName: user.name,
+      content: args.content,
+      mentionWords: validMentionWords,
+      mentionedUserNames: validMentionedUserNames,
+      mentionedUserIds: mentionedUserIds,
+    });
+
+    for (const userId of mentionedUserIds) {
+      await ctx.db.insert("notifications", {
+        userId,
+        type: "mention",
+        snippetId: args.snippetId,
+        snippetTitle: snippet.title,
+        commentId: commentId,
+        fromUserId: identity.subject,
+        fromUserName: user.name,
+        isRead: false,
+      });
+    }
+
+    return commentId;
+  },
+});
+
+export const getMyNotifications = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), identity.subject))
+      .order("desc")
+      .collect();
+
+    return notifications;
+  },
+});
+
+export const getUnreadNotificationCount = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return 0;
+
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_user_id_and_read")
+      .filter((q) =>
+        q.and(q.eq(q.field("userId"), identity.subject), q.eq(q.field("isRead"), false))
+      )
+      .collect();
+
+    return notifications.length;
+  },
+});
+
+export const markNotificationAsRead = mutation({
+  args: { notificationId: v.id("notifications") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const notification = await ctx.db.get(args.notificationId);
+    if (!notification) throw new Error("Notification not found");
+    if (notification.userId !== identity.subject)
+      throw new Error("Not authorized to mark this notification as read");
+
+    await ctx.db.patch(args.notificationId, { isRead: true });
+  },
+});
+
+export const markAllNotificationsAsRead = mutation({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_user_id_and_read")
+      .filter((q) =>
+        q.and(q.eq(q.field("userId"), identity.subject), q.eq(q.field("isRead"), false))
+      )
+      .collect();
+
+    for (const notification of notifications) {
+      await ctx.db.patch(notification._id, { isRead: true });
+    }
+  },
+});
+
+export const searchUsersByName = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.name) return [];
+
+    const searchLower = args.name.toLowerCase();
+    const users = await ctx.db.query("users").collect();
+
+    const matched = users
+      .filter((u) => u.name.toLowerCase().includes(searchLower))
+      .slice(0, 10)
+      .map((u) => ({
+        userId: u.userId,
+        name: u.name,
+      }));
+
+    return matched;
   },
 });

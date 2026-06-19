@@ -63,4 +63,28 @@ export interface Snippet {
   code: string;
   title: string;
   userName: string;
+  forkedFromId?: Id<"snippets">;
+}
+
+export interface Notification {
+  _id: Id<"notifications">;
+  _creationTime: number;
+  userId: string;
+  type: string;
+  snippetId: Id<"snippets">;
+  snippetTitle: string;
+  commentId?: Id<"snippetComments">;
+  fromUserId: string;
+  fromUserName: string;
+  isRead: boolean;
+}
+
+export interface ExportExecution {
+  id: string;
+  executionTime: number;
+  language: string;
+  code: string;
+  output: string;
+  error: string;
+  status: "success" | "error";
 }

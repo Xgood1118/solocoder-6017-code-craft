@@ -110,3 +110,49 @@ export const getUserStats = query({
     };
   },
 });
+
+export const getExecutionsForExport = query({
+  args: {
+    startTime: v.optional(v.number()),
+    endTime: v.optional(v.number()),
+    status: v.optional(v.string()), // "success" | "error" | undefined for all
+    language: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError("Not authenticated");
+
+    let executions = await ctx.db
+      .query("codeExecutions")
+      .withIndex("by_user_id")
+      .filter((q) => q.eq(q.field("userId"), identity.subject))
+      .collect();
+
+    if (args.startTime !== undefined) {
+      executions = executions.filter((e) => e._creationTime >= args.startTime!);
+    }
+    if (args.endTime !== undefined) {
+      executions = executions.filter((e) => e._creationTime <= args.endTime!);
+    }
+    if (args.status === "success") {
+      executions = executions.filter((e) => !e.error);
+    } else if (args.status === "error") {
+      executions = executions.filter((e) => !!e.error);
+    }
+    if (args.language) {
+      executions = executions.filter((e) => e.language === args.language);
+    }
+
+    executions.sort((a, b) => a._creationTime - b._creationTime);
+
+    return executions.map((e) => ({
+      id: e._id,
+      executionTime: e._creationTime,
+      language: e.language,
+      code: e.code,
+      output: e.output ?? "",
+      error: e.error ?? "",
+      status: e.error ? "error" : "success",
+    }));
+  },
+});

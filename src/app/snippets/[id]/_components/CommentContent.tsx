@@ -1,16 +1,56 @@
+import Link from "next/link";
 import CodeBlock from "./CodeBlock";
 
-function CommentContent({ content }: { content: string }) {
-  // regex
+interface CommentContentProps {
+  content: string;
+  mentionWords?: string[];
+  mentionedUserIds?: string[];
+}
+
+function CommentContent({ content, mentionWords = [], mentionedUserIds = [] }: CommentContentProps) {
+  const mentionMap = new Map<string, string>();
+  mentionWords.forEach((word, index) => {
+    if (mentionedUserIds[index]) {
+      mentionMap.set(word.toLowerCase(), mentionedUserIds[index]);
+    }
+  });
+
+  const parseMentions = (text: string) => {
+    const parts: Array<{ type: "text" | "mention"; value: string; userId?: string }> = [];
+    const regex = /@(\w+)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: "text", value: text.slice(lastIndex, match.index) });
+      }
+
+      const mentionWord = match[1].toLowerCase();
+      const userId = mentionMap.get(mentionWord);
+
+      if (userId) {
+        parts.push({ type: "mention", value: match[0], userId });
+      } else {
+        parts.push({ type: "text", value: match[0] });
+      }
+
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ type: "text", value: text.slice(lastIndex) });
+    }
+
+    return parts;
+  };
+
   const parts = content.split(/(```[\w-]*\n[\s\S]*?\n```)/g);
 
   return (
     <div className="max-w-none text-white">
       {parts.map((part, index) => {
         if (part.startsWith("```")) {
-          //           ```javascript
-          // const name = "John";
-          // ```
           const match = part.match(/```([\w-]*)\n([\s\S]*?)\n```/);
 
           if (match) {
@@ -20,8 +60,20 @@ function CommentContent({ content }: { content: string }) {
         }
 
         return part.split("\n").map((line, lineIdx) => (
-          <p key={lineIdx} className="mb-4 text-gray-300 last:mb-0">
-            {line}
+          <p key={`${index}-${lineIdx}`} className="mb-4 text-gray-300 last:mb-0">
+            {parseMentions(line).map((segment, segIdx) =>
+              segment.type === "mention" ? (
+                <Link
+                  key={segIdx}
+                  href={`/profile?userId=${segment.userId}`}
+                  className="text-blue-400 hover:text-blue-300 hover:underline"
+                >
+                  {segment.value}
+                </Link>
+              ) : (
+                <span key={segIdx}>{segment.value}</span>
+              )
+            )}
           </p>
         ));
       })}

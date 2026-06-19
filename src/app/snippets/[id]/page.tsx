@@ -6,14 +6,19 @@ import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import SnippetLoadingSkeleton from "./_components/SnippetLoadingSkeleton";
 import NavigationHeader from "@/components/NavigationHeader";
-import { Clock, Code, MessageSquare, User } from "lucide-react";
+import { Clock, Code, GitFork, MessageSquare, User } from "lucide-react";
 import { Editor } from "@monaco-editor/react";
 import { defineMonacoThemes, LANGUAGE_CONFIG } from "@/app/(root)/_constants";
 import CopyButton from "./_components/CopyButton";
 import Comments from "./_components/Comments";
+import { useState } from "react";
+import ForkSnippetDialog from "../_components/ForkSnippetDialog";
+import { useUser } from "@clerk/nextjs";
 
 function SnippetDetailPage() {
+  const { user } = useUser();
   const snippetId = useParams().id;
+  const [showForkDialog, setShowForkDialog] = useState(false);
 
   const snippet = useQuery(api.snippets.getSnippetById, { snippetId: snippetId as Id<"snippets"> });
   const comments = useQuery(api.snippets.getComments, { snippetId: snippetId as Id<"snippets"> });
@@ -57,8 +62,19 @@ function SnippetDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="inline-flex items-center px-3 py-1.5 bg-[#ffffff08] text-[#808086] rounded-lg text-sm font-medium">
-                {snippet.language}
+              <div className="flex items-center gap-3">
+                {user && (
+                  <button
+                    onClick={() => setShowForkDialog(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded-lg transition-colors"
+                  >
+                    <GitFork className="w-4 h-4" />
+                    Fork
+                  </button>
+                )}
+                <div className="inline-flex items-center px-3 py-1.5 bg-[#ffffff08] text-[#808086] rounded-lg text-sm font-medium">
+                  {snippet.language}
+                </div>
               </div>
             </div>
           </div>
@@ -95,6 +111,10 @@ function SnippetDetailPage() {
           <Comments snippetId={snippet._id} />
         </div>
       </main>
+
+      {showForkDialog && (
+        <ForkSnippetDialog snippet={snippet} onClose={() => setShowForkDialog(false)} />
+      )}
     </div>
   );
 }

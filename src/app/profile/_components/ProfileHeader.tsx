@@ -27,11 +27,12 @@ interface ProfileHeaderProps {
     email: string;
     isPro: boolean;
   };
-  user: UserResource;
+  user?: UserResource;
 }
 
 function ProfileHeader({ userStats, userData, user }: ProfileHeaderProps) {
   const starredSnippets = useQuery(api.snippets.getStarredSnippets);
+  const isOwnProfile = !!user;
   const STATS = [
     {
       label: "Code Executions",
@@ -47,31 +48,45 @@ function ProfileHeader({ userStats, userData, user }: ProfileHeaderProps) {
       },
     },
     {
-      label: "Starred Snippets",
-      value: starredSnippets?.length ?? 0,
-      icon: Star,
-      color: "from-yellow-500 to-orange-500",
-      gradient: "group-hover:via-yellow-400",
-      description: "Saved for later",
-      metric: {
-        label: "Most starred",
-        value: userStats?.mostStarredLanguage ?? "N/A",
-        icon: Trophy,
-      },
-    },
-    {
-      label: "Languages Used",
+      label: "Snippets",
       value: userStats?.languagesCount ?? 0,
       icon: Code2,
-      color: "from-purple-500 to-pink-500",
-      gradient: "group-hover:via-purple-400",
-      description: "Different languages",
+      color: "from-green-500 to-teal-500",
+      gradient: "group-hover:via-green-400",
+      description: "Created snippets",
       metric: {
         label: "Most used",
         value: userStats?.favoriteLanguage ?? "N/A",
         icon: TrendingUp,
       },
     },
+    isOwnProfile
+      ? {
+          label: "Starred Snippets",
+          value: starredSnippets?.length ?? 0,
+          icon: Star,
+          color: "from-yellow-500 to-orange-500",
+          gradient: "group-hover:via-yellow-400",
+          description: "Saved for later",
+          metric: {
+            label: "Most starred",
+            value: userStats?.mostStarredLanguage ?? "N/A",
+            icon: Trophy,
+          },
+        }
+      : {
+          label: "Languages Used",
+          value: userStats?.languagesCount ?? 0,
+          icon: Code2,
+          color: "from-purple-500 to-pink-500",
+          gradient: "group-hover:via-purple-400",
+          description: "Different languages",
+          metric: {
+            label: "Favorite",
+            value: userStats?.favoriteLanguage ?? "N/A",
+            icon: TrendingUp,
+          },
+        },
   ];
 
   return (
@@ -86,11 +101,17 @@ function ProfileHeader({ userStats, userData, user }: ProfileHeaderProps) {
             className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full 
           blur-xl opacity-50 group-hover:opacity-75 transition-opacity"
           />
-          <img
-            src={user.imageUrl}
-            alt="Profile"
-            className="w-24 h-24 rounded-full border-4 border-gray-800/50 relative z-10 group-hover:scale-105 transition-transform"
-          />
+          {user?.imageUrl ? (
+            <img
+              src={user.imageUrl}
+              alt="Profile"
+              className="w-24 h-24 rounded-full border-4 border-gray-800/50 relative z-10 group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-full border-4 border-gray-800/50 relative z-10 bg-gradient-to-br from-blue-500/30 to-purple-500/30 flex items-center justify-center">
+              <UserIcon className="w-10 h-10 text-white/80" />
+            </div>
+          )}
           {userData.isPro && (
             <div
               className="absolute -top-2 -right-2 bg-gradient-to-r from-purple-500 to-purple-600 p-2

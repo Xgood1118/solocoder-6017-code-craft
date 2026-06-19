@@ -26,13 +26,17 @@ export default defineSchema({
     language: v.string(),
     code: v.string(),
     userName: v.string(), // store user's name for easy access
-  }).index("by_user_id", ["userId"]),
+    forkedFromId: v.optional(v.id("snippets")), // reference to original snippet
+  }).index("by_user_id", ["userId"]).index("by_forked_from_id", ["forkedFromId"]),
 
   snippetComments: defineTable({
     snippetId: v.id("snippets"),
     userId: v.string(),
     userName: v.string(),
     content: v.string(), // This will store HTML content
+    mentionWords: v.optional(v.array(v.string())), // lowercase mention words that matched valid users
+    mentionedUserNames: v.optional(v.array(v.string())), // display names of mentioned users
+    mentionedUserIds: v.optional(v.array(v.string())), // userIds of mentioned users
   }).index("by_snippet_id", ["snippetId"]),
 
   stars: defineTable({
@@ -42,4 +46,15 @@ export default defineSchema({
     .index("by_user_id", ["userId"])
     .index("by_snippet_id", ["snippetId"])
     .index("by_user_id_and_snippet_id", ["userId", "snippetId"]),
+
+  notifications: defineTable({
+    userId: v.string(), // user who receives the notification
+    type: v.string(), // "mention"
+    snippetId: v.id("snippets"),
+    snippetTitle: v.string(),
+    commentId: v.optional(v.id("snippetComments")),
+    fromUserId: v.string(), // user who triggered the notification
+    fromUserName: v.string(),
+    isRead: v.boolean(),
+  }).index("by_user_id", ["userId"]).index("by_user_id_and_read", ["userId", "isRead"]),
 });

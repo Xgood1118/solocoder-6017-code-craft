@@ -7,15 +7,17 @@ import { useState } from "react";
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Clock, Trash2, User } from "lucide-react";
+import { Clock, GitFork, Trash2, User } from "lucide-react";
 import Image from "next/image";
 import toast from "react-hot-toast";
 import StarButton from "@/components/StarButton";
+import ForkSnippetDialog from "./ForkSnippetDialog";
 
 function SnippetCard({ snippet }: { snippet: Snippet }) {
   const { user } = useUser();
   const deleteSnippet = useMutation(api.snippets.deleteSnippet);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showForkDialog, setShowForkDialog] = useState(false);
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -82,6 +84,17 @@ function SnippetCard({ snippet }: { snippet: Snippet }) {
               >
                 <StarButton snippetId={snippet._id} />
 
+                {user && (
+                  <button
+                    onClick={() => setShowForkDialog(true)}
+                    className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-200
+                      bg-gray-500/10 text-gray-400 hover:bg-green-500/10 hover:text-green-400"
+                    title="Fork snippet"
+                  >
+                    <GitFork className="size-3.5" />
+                  </button>
+                )}
+
                 {user?.id === snippet.userId && (
                   <div className="z-10" onClick={(e) => e.preventDefault()}>
                     <button
@@ -132,6 +145,10 @@ function SnippetCard({ snippet }: { snippet: Snippet }) {
           </div>
         </div>
       </Link>
+
+      {showForkDialog && (
+        <ForkSnippetDialog snippet={snippet} onClose={() => setShowForkDialog(false)} />
+      )}
     </motion.div>
   );
 }
