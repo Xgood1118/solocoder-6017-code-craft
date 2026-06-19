@@ -3,21 +3,35 @@ import CodeBlock from "./CodeBlock";
 
 interface CommentContentProps {
   content: string;
-  mentionWords?: string[];
+  mentionDisplayTexts?: string[];
   mentionedUserIds?: string[];
 }
 
-function CommentContent({ content, mentionWords = [], mentionedUserIds = [] }: CommentContentProps) {
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function CommentContent({
+  content,
+  mentionDisplayTexts = [],
+  mentionedUserIds = [],
+}: CommentContentProps) {
   const mentionMap = new Map<string, string>();
-  mentionWords.forEach((word, index) => {
+  mentionDisplayTexts.forEach((text, index) => {
     if (mentionedUserIds[index]) {
-      mentionMap.set(word.toLowerCase(), mentionedUserIds[index]);
+      mentionMap.set(text.toLowerCase(), mentionedUserIds[index]);
     }
   });
 
+  const sortedTexts = [...mentionDisplayTexts].sort((a, b) => b.length - a.length);
+  const mentionRegex =
+    sortedTexts.length > 0
+      ? new RegExp(`@(${sortedTexts.map(escapeRegExp).join("|")})\\b`, "gi")
+      : /@(\w+)/g;
+
   const parseMentions = (text: string) => {
     const parts: Array<{ type: "text" | "mention"; value: string; userId?: string }> = [];
-    const regex = /@(\w+)/g;
+    const regex = new RegExp(mentionRegex.source, mentionRegex.flags);
     let lastIndex = 0;
     let match;
 
@@ -26,8 +40,8 @@ function CommentContent({ content, mentionWords = [], mentionedUserIds = [] }: C
         parts.push({ type: "text", value: text.slice(lastIndex, match.index) });
       }
 
-      const mentionWord = match[1].toLowerCase();
-      const userId = mentionMap.get(mentionWord);
+      const mentionKey = (match[1] ?? match[0].slice(1)).toLowerCase();
+      const userId = mentionMap.get(mentionKey);
 
       if (userId) {
         parts.push({ type: "mention", value: match[0], userId });

@@ -34,8 +34,9 @@ export default defineSchema({
     userId: v.string(),
     userName: v.string(),
     content: v.string(), // This will store HTML content
-    mentionWords: v.optional(v.array(v.string())), // lowercase mention words that matched valid users
-    mentionedUserNames: v.optional(v.array(v.string())), // display names of mentioned users
+    mentionWords: v.optional(v.array(v.string())), // display names of mentioned users (lowercase, for matching)
+    mentionDisplayTexts: v.optional(v.array(v.string())), // actual @ text as it appeared in comment (e.g. "John Doe")
+    mentionedUserNames: v.optional(v.array(v.string())), // full user names
     mentionedUserIds: v.optional(v.array(v.string())), // userIds of mentioned users
   }).index("by_snippet_id", ["snippetId"]),
 

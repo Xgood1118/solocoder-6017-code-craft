@@ -316,6 +316,57 @@ export const getSnippetsForkedFromMe = query({
 
 // ====== Mention & Notification related APIs ======
 
+function findMentions(content: string, users: Array<{ name: string; userId: string }>) {
+  const mentions: Array<{ word: string; matchedText: string; userName: string; userId: string; startIndex: number }> = [];
+  const atPositions: number[] = [];
+
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "@") {
+      atPositions.push(i);
+    }
+  }
+
+  const sortedUsers = [...users].sort((a, b) => b.name.length - a.name.length);
+  const usedRanges: Array<{ start: number; end: number }> = [];
+
+  for (const atPos of atPositions) {
+    const textAfterAt = content.slice(atPos + 1);
+
+    for (const user of sortedUsers) {
+      const lowerText = textAfterAt.toLowerCase();
+      const lowerName = user.name.toLowerCase();
+
+      if (lowerText.startsWith(lowerName)) {
+        const matchEnd = atPos + 1 + user.name.length;
+        const charAfterMatch = content[matchEnd];
+        const isBoundary = charAfterMatch === undefined || /\s|@|[^\w\u4e00-\u9fa5]/.test(charAfterMatch);
+
+        if (!isBoundary) continue;
+
+        const overlap = usedRanges.some(
+          (range) => !(matchEnd <= range.start || atPos >= range.end)
+        );
+        if (overlap) continue;
+
+        const matchedText = textAfterAt.slice(0, user.name.length);
+
+        mentions.push({
+          word: user.name,
+          matchedText: matchedText,
+          userName: user.name,
+          userId: user.userId,
+          startIndex: atPos,
+        });
+
+        usedRanges.push({ start: atPos, end: matchEnd });
+        break;
+      }
+    }
+  }
+
+  return mentions;
+}
+
 export const addCommentWithMentions = mutation({
   args: {
     snippetId: v.id("snippets"),
@@ -336,31 +387,27 @@ export const addCommentWithMentions = mutation({
     const snippet = await ctx.db.get(args.snippetId);
     if (!snippet) throw new Error("Snippet not found");
 
-    const mentionRegex = /@(\w+)/g;
-    const mentionedUsernames = new Set<string>();
-    let match;
-    while ((match = mentionRegex.exec(args.content)) !== null) {
-      mentionedUsernames.add(match[1]);
-    }
-
     const allUsers = await ctx.db.query("users").collect();
-    const userMap = new Map<string, typeof user>();
-    allUsers.forEach((u) => {
-      userMap.set(u.name.toLowerCase(), u);
+    const mentions = findMentions(args.content, allUsers);
+
+    const uniqueMentions = new Map<string, (typeof mentions)[0]>();
+    mentions.forEach((m) => {
+      if (m.userId !== identity.subject) {
+        uniqueMentions.set(m.userId, m);
+      }
     });
 
     const validMentionWords: string[] = [];
+    const validMentionDisplayTexts: string[] = [];
     const validMentionedUserNames: string[] = [];
     const mentionedUserIds: string[] = [];
 
-    for (const username of mentionedUsernames) {
-      const mentionedUser = userMap.get(username.toLowerCase());
-      if (mentionedUser && mentionedUser.userId !== identity.subject) {
-        validMentionWords.push(username.toLowerCase());
-        validMentionedUserNames.push(mentionedUser.name);
-        mentionedUserIds.push(mentionedUser.userId);
-      }
-    }
+    uniqueMentions.forEach((m) => {
+      validMentionWords.push(m.word.toLowerCase());
+      validMentionDisplayTexts.push(m.matchedText);
+      validMentionedUserNames.push(m.userName);
+      mentionedUserIds.push(m.userId);
+    });
 
     const commentId = await ctx.db.insert("snippetComments", {
       snippetId: args.snippetId,
@@ -368,6 +415,7 @@ export const addCommentWithMentions = mutation({
       userName: user.name,
       content: args.content,
       mentionWords: validMentionWords,
+      mentionDisplayTexts: validMentionDisplayTexts,
       mentionedUserNames: validMentionedUserNames,
       mentionedUserIds: mentionedUserIds,
     });
